@@ -1,4 +1,4 @@
-package com.example.mykeyboard
+package com.mathapelo.keyboard
 
 import android.app.Activity
 import android.content.Intent
@@ -36,7 +36,7 @@ class MainActivity : Activity() {
             setPadding(dp(20), dp(28), dp(20), dp(48))
         }
 
-        text("Serame Keyboard", 26f, C.TEXT, 0)
+        text("Mathapelo Keyboard", 26f, C.TEXT, 0)
         text("Set it up, then try it in the box.", 14f, C.TEXT_DIM, 4)
 
         button("1. Enable keyboard") {
@@ -75,6 +75,13 @@ class MainActivity : Activity() {
         toggle("Key sounds", prefs.sound) { prefs.sound = it }
         toggle("Auto-capitalize", prefs.autoCap) { prefs.autoCap = it }
         toggle("Show number row", prefs.showNumberRow) { prefs.showNumberRow = it }
+
+        text("Quick replacements", 20f, C.TEXT, 28)
+        text("Type a trigger to insert its value immediately. The ✦ key also opens them from number-only fields.", 14f, C.TEXT_DIM, 4)
+        shortcutField(".id", prefs.dotId) { prefs.dotId = it }
+        shortcutField(".nu", prefs.dotNu) { prefs.dotNu = it }
+        shortcutField(".em", prefs.dotEm) { prefs.dotEm = it }
+        shortcutField(".pas", prefs.dotPas, secret = true) { prefs.dotPas = it }
 
         text("Text shortcuts (one per line, like omw=on my way)", 15f, C.TEXT, 20)
         col.addView(EditText(this).apply {
@@ -147,6 +154,29 @@ class MainActivity : Activity() {
             ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(16) }
         col.addView(s)
+    }
+
+    private fun shortcutField(
+        trigger: String,
+        value: String,
+        secret: Boolean = false,
+        onChange: (String) -> Unit
+    ) {
+        text(trigger, 15f, C.TEXT, 12)
+        col.addView(EditText(this).apply {
+            setText(value)
+            setTextColor(C.TEXT)
+            setHintTextColor(C.TEXT_DIM)
+            hint = "Value for $trigger"
+            inputType = InputType.TYPE_CLASS_TEXT or
+                (if (secret) InputType.TYPE_TEXT_VARIATION_PASSWORD else InputType.TYPE_TEXT_VARIATION_NORMAL)
+            isSingleLine = true
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: Editable?) { onChange(s?.toString() ?: "") }
+            })
+        })
     }
 
     private fun seek(max: Int, value: Int, onChange: (Int) -> Unit) {

@@ -1,4 +1,4 @@
-package com.example.mykeyboard
+package com.mathapelo.keyboard
 
 import android.content.ClipData
 import android.content.ClipDescription
@@ -77,7 +77,7 @@ private val EMOJI = listOf(
     "⚽ 🏀 🏈 ⚾ 🎾 🏐 🏉 🎱 🏓 🏸 🥊 🎯 🎮 🎲 🎵 🎶 🎤 🎧 🎸 🎹 🎬 📱 💻 📷 💡 🔑 🔒 💰 🎁 🎉 🎈 🚗 🚕 🚌 ✈️ 🚀 ⏰ 📚 ✏️ 📌 🏠 🌍 🌙 ☀️ ⚡ ❄️ 🌈"
 )
 
-class SerameKeyboardService : InputMethodService() {
+class MathapeloKeyboardService : InputMethodService() {
 
     private lateinit var prefs: Prefs
     private lateinit var clipboard: ClipboardManager
@@ -100,6 +100,7 @@ class SerameKeyboardService : InputMethodService() {
     private var fieldMode = MODE_TEXT
     private var isPassword = false
     private var emojiTab = 0
+    private var recentKeys = ""
 
     private val clipListener = ClipboardManager.OnPrimaryClipChangedListener { onClipChanged() }
 
@@ -186,6 +187,7 @@ class SerameKeyboardService : InputMethodService() {
 
         page = if (fieldMode == MODE_PHONE || fieldMode == MODE_NUMBER || fieldMode == MODE_DATETIME) PAGE_NUMPAD else PAGE_LETTERS
         shift = OFF
+        recentKeys = ""
         if (::outer.isInitialized) render()
         autoCapitalize()
     }
@@ -193,7 +195,18 @@ class SerameKeyboardService : InputMethodService() {
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         handler.removeCallbacksAndMessages(null)
+        recentKeys = ""
         hideBubble()
+    }
+
+    override fun onUpdateSelection(
+        oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int,
+        candidatesStart: Int, candidatesEnd: Int
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        if (newSelStart != newSelEnd || newSelEnd < oldSelEnd || newSelEnd > oldSelEnd + 1) {
+            recentKeys = ""
+        }
     }
 
     // ---------- Small helpers ----------
@@ -362,6 +375,7 @@ class SerameKeyboardService : InputMethodService() {
         val tv = TextView(this)
         tv.text = label
         tv.contentDescription = when (label) {
+            "✦" -> "Quick replacements"
             "😊" -> "Emoji"
             "📋" -> "Clipboard history"
             "↔" -> "One-handed mode"
@@ -458,20 +472,42 @@ class SerameKeyboardService : InputMethodService() {
     private fun buildTopBar() {
         topBar.removeAllViews()
         val brand = TextView(this)
-        brand.text = "Serame"
+        brand.text = "Mathapelo"
         brand.setTextColor(C.ACCENT)
         brand.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
         brand.gravity = Gravity.CENTER_VERTICAL
         brand.setPadding(dp(10), 0, 0, 0)
         brand.layoutParams = LinearLayout.LayoutParams(0, dp(38), 1.35f)
         topBar.addView(brand)
-        topBar.addView(barKey("😊") { page = PAGE_EMOJI; render() })
+        topBar.addView(barKey("✦") { showQuickShortcuts() })
         topBar.addView(barKey("📋") { page = PAGE_CLIP; render() })
         topBar.addView(barKey("↔") {
             prefs.oneHanded = (prefs.oneHanded + 1) % 3
             applyOneHanded()
         })
         topBar.addView(barKey("⚙") { openSettings() })
+    }
+
+    private fun showQuickShortcuts() {
+        topBar.removeAllViews()
+        listOf(
+            ".id" to prefs.dotId,
+            ".nu" to prefs.dotNu,
+            ".em" to prefs.dotEm,
+            ".pas" to prefs.dotPas
+        ).forEach { (trigger, value) ->
+            topBar.addView(barKey(trigger) {
+                if (value.isEmpty()) {
+                    Toast.makeText(this, "Set $trigger in settings", Toast.LENGTH_SHORT).show()
+                } else {
+                    recentKeys = ""
+                    currentInputConnection?.commitText(value, 1)
+                    autoCapitalize()
+                    buildTopBar()
+                }
+            })
+        }
+        topBar.addView(barKey("✕") { buildTopBar() })
     }
 
     private fun showAlternates(chars: String) {
@@ -715,6 +751,7 @@ class SerameKeyboardService : InputMethodService() {
     // ---------- Typing ----------
 
     private fun commit(text: String) {
+        recentKeys = ""
         currentInputConnection?.commitText(text, 1)
         autoCapitalize()
     }
@@ -723,6 +760,7 @@ class SerameKeyboardService : InputMethodService() {
         val out = if (shift != OFF) c.uppercaseChar() else c
         currentInputConnection?.commitText(out.toString(), 1)
         if (shift == ONCE) shift = OFF
+        expandDotShortcut(out.toString())
         autoCapitalize()
         refreshLetters()
     }
@@ -730,13 +768,17 @@ class SerameKeyboardService : InputMethodService() {
     private fun typeChar(s: String) {
         val separator = s.length == 1 && s[0] in " .,!?;:"
         if (separator && expandShortcut(s)) {
+            recentKeys = ""
             autoCapitalize()
             return
         }
         commit(s)
+        expandDotShortcut(s)
+        autoCapitalize()
     }
 
     private fun deleteOne() {
+        recentKeys = ""
         val ic = currentInputConnection ?: return
         val sel = ic.getSelectedText(0)
         if (sel != null && sel.isNotEmpty()) {
@@ -756,6 +798,7 @@ class SerameKeyboardService : InputMethodService() {
     }
 
     private fun pressEnter() {
+        recentKeys = ""
         val action = enterAction()
         if (action in actionSet) {
             currentInputConnection?.performEditorAction(action)
@@ -766,6 +809,28 @@ class SerameKeyboardService : InputMethodService() {
     }
 
     // ---------- Text shortcuts ----------
+
+    private fun expandDotShortcut(typed: String) {
+        if (typed.length != 1) return
+        val ic = currentInputConnection ?: return
+        recentKeys = (recentKeys + typed).takeLast(8)
+        val before = ic.getTextBeforeCursor(8, 0)?.toString()
+        val suffix = if (isPassword || before.isNullOrEmpty()) recentKeys else before
+        val match = listOf(
+            ".pas" to prefs.dotPas,
+            ".id" to prefs.dotId,
+            ".nu" to prefs.dotNu,
+            ".em" to prefs.dotEm
+        ).firstOrNull { (trigger, value) -> value.isNotEmpty() && suffix.endsWith(trigger, ignoreCase = true) }
+            ?: return
+
+        ic.beginBatchEdit()
+        if (ic.deleteSurroundingText(match.first.length, 0)) {
+            ic.commitText(match.second, 1)
+            recentKeys = ""
+        }
+        ic.endBatchEdit()
+    }
 
     private fun expandShortcut(separator: String): Boolean {
         if (isPassword || fieldMode != MODE_TEXT) return false

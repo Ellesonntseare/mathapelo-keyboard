@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "MyKeyboard"
+rootProject.name = "MathapeloKeyboard"
 include(":app")

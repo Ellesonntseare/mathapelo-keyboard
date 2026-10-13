@@ -1,17 +1,21 @@
-# Serame Keyboard
+# Mathapelo Keyboard
 
-An Android keyboard written in Kotlin. Open this repository in Android Studio, or
-run `gradle assembleDebug` with Android SDK 34 and JDK 17 installed.
+A separate Android keyboard for Mathapelo, with a rose and plum theme. Its
+application ID is `com.mathapelo.keyboard`, so it can be installed alongside
+Serame Keyboard.
 
-The app source is in `app/`. The old `MyKeyboard.zip` is retained as a snapshot
-of the original upload; the files at the repository root are the working source.
+## Quick replacements
 
-## Features
+Typing `.id`, `.nu`, `.em`, or `.pas` inserts the saved value immediately. Tap
+the ✦ key to open these replacements from fields that only allow numbers. The
+values can be changed in the app settings. The `.pas` setting is masked there.
 
-- Letter, symbol, emoji, phone, and number layouts
-- Optional number row and adjustable key height
-- One-handed mode, text shortcuts, and clipboard history
-- Auto-capitalization, key sounds, and vibration settings
+The repository does not contain Mathapelo's private replacement values. The
+private GitHub Actions build receives them through the
+`MATHAPELO_SHORTCUTS_B64` repository secret. A local build without that secret
+still works; enter the values in the app settings after installing it.
 
-The keyboard does not request network access. Clipboard history is stored on the
-device and can be cleared from settings.
+## Build
+
+Open the repository in Android Studio, or run `gradle assembleDebug` with
+Android SDK 34 and JDK 17. GitHub Actions uploads a debug APK after each push.

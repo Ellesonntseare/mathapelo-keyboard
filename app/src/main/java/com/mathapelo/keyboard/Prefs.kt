@@ -1,24 +1,55 @@
-package com.example.mykeyboard
+package com.mathapelo.keyboard
 
 import android.content.Context
+import android.util.Base64
 import org.json.JSONArray
 
 object C {
-    val BG = 0xFF171B1E.toInt()
-    val BAR = 0xFF252B2F.toInt()
-    val KEY = 0xFF343C40.toInt()
-    val KEY_DOWN = 0xFF526066.toInt()
-    val SPECIAL = 0xFF273034.toInt()
-    val ACCENT = 0xFF3EAD75.toInt()
-    val ACCENT_DOWN = 0xFF348D61.toInt()
-    val TEXT = 0xFFF5F8F6.toInt()
-    val TEXT_DIM = 0xFFB6C3BE.toInt()
-    val ACCENT_TEXT = 0xFF0B2418.toInt()
+    val BG = 0xFF241B29.toInt()
+    val BAR = 0xFF33263A.toInt()
+    val KEY = 0xFF5B4561.toInt()
+    val KEY_DOWN = 0xFF795C80.toInt()
+    val SPECIAL = 0xFF40304A.toInt()
+    val ACCENT = 0xFFF2A6C1.toInt()
+    val ACCENT_DOWN = 0xFFD783A5.toInt()
+    val TEXT = 0xFFFFF7FC.toInt()
+    val TEXT_DIM = 0xFFD4BDD0.toInt()
+    val ACCENT_TEXT = 0xFF3B1F30.toInt()
 }
 
 class Prefs(context: Context) {
     private val sp = context.applicationContext
-        .getSharedPreferences("serame_prefs", Context.MODE_PRIVATE)
+        .getSharedPreferences("mathapelo_prefs", Context.MODE_PRIVATE)
+
+    private val shortcutDefaults: Map<String, String> by lazy {
+        try {
+            val text = String(Base64.decode(BuildConfig.DEFAULT_DOT_SHORTCUTS_B64, Base64.DEFAULT), Charsets.UTF_8)
+            text.lines().mapNotNull { line ->
+                val split = line.indexOf('=')
+                if (split <= 0) null else line.substring(0, split).trim() to line.substring(split + 1)
+            }.toMap()
+        } catch (_: IllegalArgumentException) {
+            emptyMap()
+        }
+    }
+
+    private fun defaultFor(trigger: String) = shortcutDefaults[trigger] ?: ""
+
+    var dotId: String
+        get() = sp.getString("dot_id", defaultFor(".id")) ?: ""
+        set(v) { sp.edit().putString("dot_id", v).apply() }
+
+    var dotNu: String
+        get() = sp.getString("dot_nu", defaultFor(".nu")) ?: ""
+        set(v) { sp.edit().putString("dot_nu", v).apply() }
+
+    var dotEm: String
+        get() = sp.getString("dot_em", defaultFor(".em")) ?: ""
+        set(v) { sp.edit().putString("dot_em", v).apply() }
+
+    var dotPas: String
+        get() = sp.getString("dot_pas", defaultFor(".pas")) ?: ""
+        set(v) { sp.edit().putString("dot_pas", v).apply() }
 
     var keyHeight: Int
         get() = sp.getInt("keyHeight", 46)

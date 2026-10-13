@@ -10,9 +10,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Unzip project
-        run: unzip -o MyKeyboard.zip -d project
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -23,10 +20,11 @@ jobs:
           gradle-version: 8.7
 
       - name: Build debug APK
-        working-directory: project
+        env:
+          MATHAPELO_SHORTCUTS_B64: ${{ secrets.MATHAPELO_SHORTCUTS_B64 }}
         run: gradle assembleDebug
 
       - uses: actions/upload-artifact@v4
         with:
-          name: keyboard-apk
-          path: project/app/build/outputs/apk/debug/app-debug.apk
+          name: mathapelo-keyboard-apk
+          path: app/build/outputs/apk/debug/app-debug.apk

@@ -34,6 +34,7 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.core.view.inputmethod.InputConnectionCompat
 import androidx.core.view.inputmethod.InputContentInfoCompat
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
 
@@ -376,6 +377,7 @@ class MathapeloKeyboardService : InputMethodService() {
         tv.text = label
         tv.contentDescription = when (label) {
             "✦" -> "Quick replacements"
+            "Copied" -> "Copied text and pictures"
             "😊" -> "Emoji"
             "📋" -> "Clipboard history"
             "↔" -> "One-handed mode"
@@ -385,7 +387,7 @@ class MathapeloKeyboardService : InputMethodService() {
         }
         tv.gravity = Gravity.CENTER
         tv.setTextColor(C.TEXT)
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, if (label.length > 4) 14f else 20f)
         tv.background = roundBg(C.BAR)
         val lp = LinearLayout.LayoutParams(0, dp(38), 1f)
         lp.setMargins(dp(3), dp(3), dp(3), dp(3))
@@ -479,8 +481,8 @@ class MathapeloKeyboardService : InputMethodService() {
         brand.setPadding(dp(10), 0, 0, 0)
         brand.layoutParams = LinearLayout.LayoutParams(0, dp(38), 1.35f)
         topBar.addView(brand)
+        topBar.addView(barKey("Copied") { page = PAGE_CLIP; render() })
         topBar.addView(barKey("✦") { showQuickShortcuts() })
-        topBar.addView(barKey("📋") { page = PAGE_CLIP; render() })
         topBar.addView(barKey("↔") {
             prefs.oneHanded = (prefs.oneHanded + 1) % 3
             applyOneHanded()
@@ -702,6 +704,14 @@ class MathapeloKeyboardService : InputMethodService() {
         list.orientation = LinearLayout.VERTICAL
 
         val clips = prefs.clips
+        val textCount = clips.count { !isImageClip(it) }
+        val imageCount = clips.size - textCount
+        val summary = TextView(this)
+        summary.text = "Copied  •  $textCount texts  •  $imageCount pictures"
+        summary.setTextColor(C.TEXT_DIM)
+        summary.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+        summary.setPadding(dp(12), dp(10), dp(12), dp(8))
+        list.addView(summary)
         if (clips.isEmpty()) {
             val empty = TextView(this)
             empty.text = "Nothing copied yet.\nText and images you copy show up here."
@@ -913,7 +923,11 @@ class MathapeloKeyboardService : InputMethodService() {
                 if (desc.getMimeType(i).startsWith("image/")) hasImage = true
             }
             val uri = item.uri
-            if (hasImage && uri != null) {
+            val uriIsImage = if (uri != null) {
+                try { contentResolver.getType(uri)?.startsWith("image/") == true }
+                catch (_: Exception) { false }
+            } else false
+            if ((hasImage || uriIsImage) && uri != null) {
                 saveImageClip(uri)
                 return
             }
@@ -936,15 +950,26 @@ class MathapeloKeyboardService : InputMethodService() {
         File(filesDir, "clips").listFiles()?.forEach {
             if (it.name !in keepNames) it.delete()
         }
+        if (::outer.isInitialized && page == PAGE_CLIP) render()
     }
 
     private fun saveImageClip(uri: Uri) {
         val bytes = try {
-            contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            contentResolver.openInputStream(uri)?.use { stream ->
+                val output = ByteArrayOutputStream()
+                val chunk = ByteArray(8192)
+                while (true) {
+                    val count = stream.read(chunk)
+                    if (count < 0) break
+                    if (output.size() + count > 10 * 1024 * 1024) return
+                    output.write(chunk, 0, count)
+                }
+                output.toByteArray()
+            }
         } catch (e: Exception) {
             null
         }
-        if (bytes == null || bytes.size < 12 || bytes.size > 5 * 1024 * 1024) return
+        if (bytes == null || bytes.size < 12) return
 
         val hash = MessageDigest.getInstance("MD5").digest(bytes)
             .joinToString("") { "%02x".format(it) }
@@ -974,7 +999,7 @@ class MathapeloKeyboardService : InputMethodService() {
         bounds.inJustDecodeBounds = true
         BitmapFactory.decodeFile(file.path, bounds)
         var sample = 1
-        while (bounds.outWidth / (sample * 2) >= 400 && bounds.outHeight / (sample * 2) >= 400) {
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 400) {
             sample *= 2
         }
         val opts = BitmapFactory.Options()
@@ -985,6 +1010,7 @@ class MathapeloKeyboardService : InputMethodService() {
     private fun imageClipView(name: String): View {
         val file = File(File(filesDir, "clips"), name)
         val iv = ImageView(this)
+        iv.contentDescription = "Copied picture"
         iv.scaleType = ImageView.ScaleType.FIT_CENTER
         iv.setPadding(dp(6), dp(6), dp(6), dp(6))
         iv.background = roundBg(C.KEY)

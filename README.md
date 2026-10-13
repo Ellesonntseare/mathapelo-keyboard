@@ -10,6 +10,10 @@ Typing `.id`, `.nu`, `.em`, or `.pas` inserts the saved value immediately. Tap
 the ✦ key to open these replacements from fields that only allow numbers. The
 values can be changed in the app settings. The `.pas` setting is masked there.
 
+The **Copied** button beside Mathapelo opens a dashboard of copied text and
+picture thumbnails. Tap an item to paste it; clear the history from the
+dashboard or app settings. Picture clips up to 10 MB are kept on the device.
+
 The repository does not contain Mathapelo's private replacement values. The
 private GitHub Actions build receives them through the
 `MATHAPELO_SHORTCUTS_B64` repository secret. A local build without that secret

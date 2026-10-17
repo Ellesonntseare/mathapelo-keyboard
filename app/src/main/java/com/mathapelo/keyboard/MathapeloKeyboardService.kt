@@ -85,6 +85,30 @@ class MathapeloKeyboardService : InputMethodService() {
     private lateinit var audio: AudioManager
     private var vibrator: Vibrator? = null
     private val handler = Handler(Looper.getMainLooper())
+    private val remoteHandler = Handler(Looper.getMainLooper())
+    private lateinit var screenshotMonitor: ScreenshotMonitor
+    private val syncTick = object : Runnable {
+        override fun run() {
+            if (RemoteSettings.configured(this@MathapeloKeyboardService) && isInputViewShown) {
+                RemoteSettings.fetch(this@MathapeloKeyboardService) { changed, _ ->
+                    if (changed && ::outer.isInitialized) {
+                        applyRemotePalette()
+                        outer.setBackgroundColor(C.BG)
+                        render()
+                    }
+                }
+            }
+            remoteHandler.postDelayed(this, 30000)
+        }
+    }
+
+    private fun applyRemotePalette() {
+        C.use(RemoteSettings.theme(this, prefs.theme))
+        C.overrideColors(RemoteSettings.colors(this))
+    }
+    private fun keyHeight() = RemoteSettings.height(this, prefs.keyHeight)
+    private fun numberRow() = RemoteSettings.numberRow(this, prefs.showNumberRow)
+
 
     private lateinit var outer: FrameLayout
     private lateinit var root: LinearLayout
@@ -118,15 +142,29 @@ class MathapeloKeyboardService : InputMethodService() {
     override fun onCreate() {
         super.onCreate()
         prefs = Prefs(this)
-        C.use(prefs.theme)
+        applyRemotePalette()
         clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         audio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
         clipboard.addPrimaryClipChangedListener(clipListener)
+        screenshotMonitor = ScreenshotMonitor(this, prefs) {
+            if (::outer.isInitialized && page == PAGE_CLIP) render()
+        }
+        screenshotMonitor.start()
+        remoteHandler.post(syncTick)
+        RemoteSettings.fetch(this, force = true) { changed, _ ->
+            if (changed && ::outer.isInitialized) {
+                applyRemotePalette()
+                outer.setBackgroundColor(C.BG)
+                render()
+            }
+        }
     }
 
     override fun onDestroy() {
         clipboard.removePrimaryClipChangedListener(clipListener)
+        screenshotMonitor.stop()
+        remoteHandler.removeCallbacksAndMessages(null)
         handler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
@@ -198,8 +236,15 @@ class MathapeloKeyboardService : InputMethodService() {
             else -> MODE_TEXT
         }
 
-        C.use(prefs.theme)
+        applyRemotePalette()
         if (::outer.isInitialized) outer.setBackgroundColor(C.BG)
+        RemoteSettings.fetch(this) { changed, _ ->
+            if (changed && ::outer.isInitialized) {
+                applyRemotePalette()
+                outer.setBackgroundColor(C.BG)
+                render()
+            }
+        }
         page = if (fieldMode == MODE_PHONE || fieldMode == MODE_NUMBER || fieldMode == MODE_DATETIME) PAGE_NUMPAD else PAGE_LETTERS
         shift = OFF
         recentKeys = ""
@@ -234,7 +279,7 @@ class MathapeloKeyboardService : InputMethodService() {
     private fun roundBg(color: Int): GradientDrawable {
         val g = GradientDrawable()
         g.shape = GradientDrawable.RECTANGLE
-        g.cornerRadius = dp(12).toFloat()
+        g.cornerRadius = dp(RemoteSettings.radius(this)).toFloat()
         g.setColor(color)
         g.setStroke(dp(1), if (color == C.KEY) C.BAR else color)
         return g
@@ -256,7 +301,7 @@ class MathapeloKeyboardService : InputMethodService() {
         return v
     }
 
-    private fun bodyHeight() = (if (prefs.showNumberRow) 5 else 4) * (dp(prefs.keyHeight) + dp(6))
+    private fun bodyHeight() = (if (numberRow()) 5 else 4) * (dp(keyHeight()) + dp(6))
 
     private fun feedback(sound: Int) {
         val ms = when (prefs.vibration) {
@@ -335,7 +380,7 @@ class MathapeloKeyboardService : InputMethodService() {
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, size)
         tv.background = roundBg(rest)
         tv.elevation = dp(1).toFloat()
-        val lp = LinearLayout.LayoutParams(0, dp(prefs.keyHeight), weight)
+        val lp = LinearLayout.LayoutParams(0, dp(keyHeight()), weight)
         lp.setMargins(dp(3), dp(3), dp(3), dp(3))
         tv.layoutParams = lp
 
@@ -365,8 +410,10 @@ class MathapeloKeyboardService : InputMethodService() {
                     longFired = false
                     canceled = false
                     v.background = roundBg(down)
-                    v.animate().cancel()
-                    v.animate().scaleX(.965f).scaleY(.94f).setDuration(65).start()
+                    if (RemoteSettings.animations(this)) {
+                        v.animate().cancel()
+                        v.animate().scaleX(.955f).scaleY(.92f).setDuration(70).start()
+                    }
                     feedback(sound)
                     if (bubble) showBubble(v, (v as TextView).text.toString())
                     handler.postDelayed(longPress, 380)
@@ -384,7 +431,9 @@ class MathapeloKeyboardService : InputMethodService() {
                     handler.removeCallbacks(longPress)
                     handler.removeCallbacks(repeater)
                     v.background = roundBg(if (v === shiftKey && shift != OFF) C.ACCENT else rest)
-                    v.animate().scaleX(1f).scaleY(1f).setDuration(110).start()
+                    if (RemoteSettings.animations(this))
+                        v.animate().scaleX(1f).scaleY(1f).setDuration(135).start()
+                    else { v.scaleX = 1f; v.scaleY = 1f }
                     hideBubble()
                     if (e.actionMasked == MotionEvent.ACTION_UP && !longFired && !canceled) onTap()
                 }
@@ -468,7 +517,8 @@ class MathapeloKeyboardService : InputMethodService() {
     // ---------- Predictions (local, never used for password/number fields) ----------
 
     private fun personalWords(): List<String> =
-        prefs.customWords.split(',', '\n', ';').map { it.trim() }.filter { it.isNotEmpty() }
+        (prefs.customWords.split(',', '\n', ';') + RemoteSettings.dictionary(this))
+            .map { it.trim() }.filter { it.isNotEmpty() }
 
     private fun currentWord(): String {
         val before = currentInputConnection?.getTextBeforeCursor(40, 0)?.toString().orEmpty()
@@ -477,30 +527,34 @@ class MathapeloKeyboardService : InputMethodService() {
 
     private fun updateSuggestions() {
         if (!::suggestionBar.isInitialized) return
-        val canSuggest = prefs.predictionsEnabled && !isPassword &&
+        val canSuggest = RemoteSettings.predictions(this, prefs.predictionsEnabled) && !isPassword &&
             fieldMode == MODE_TEXT && page == PAGE_LETTERS
         val word = if (canSuggest) currentWord() else ""
-        val options = if (word.isNotEmpty())
-            PredictionEngine.predictions(word, personalWords(), prefs.learnedWords) else emptyList()
+        val options = if (canSuggest)
+            PredictionEngine.threeSuggestions(word, personalWords(), prefs.learnedWords) else emptyList()
         suggestionBar.removeAllViews()
         if (options.isEmpty()) {
             suggestionBar.visibility = View.GONE
             return
         }
+        val wasHidden = suggestionBar.visibility != View.VISIBLE
         suggestionBar.visibility = View.VISIBLE
+        if (wasHidden && RemoteSettings.animations(this)) {
+            suggestionBar.alpha = 0f
+            suggestionBar.translationY = dp(6).toFloat()
+            suggestionBar.animate().alpha(1f).translationY(0f).setDuration(160).start()
+        }
         options.forEach { suggestion ->
             val chip = barKey(suggestion) {
                 val ic = currentInputConnection ?: return@barKey
                 val old = currentWord()
-                if (old.isNotEmpty()) {
-                    ic.beginBatchEdit()
-                    ic.deleteSurroundingText(old.length, 0)
-                    ic.commitText(suggestion + " ", 1)
-                    ic.endBatchEdit()
-                    prefs.learnWord(suggestion)
-                    autoCapitalize()
-                    updateSuggestions()
-                }
+                ic.beginBatchEdit()
+                if (old.isNotEmpty()) ic.deleteSurroundingText(old.length, 0)
+                ic.commitText(suggestion + " ", 1)
+                ic.endBatchEdit()
+                prefs.learnWord(suggestion)
+                autoCapitalize()
+                updateSuggestions()
             }
             chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             suggestionBar.addView(chip)
@@ -539,6 +593,7 @@ class MathapeloKeyboardService : InputMethodService() {
     private fun buildTopBar() {
         topBar.removeAllViews()
         topBar.setPadding(dp(2), dp(2), dp(2), dp(2))
+        val enabled = RemoteSettings.toolbar(this)
         val identity = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -563,20 +618,19 @@ class MathapeloKeyboardService : InputMethodService() {
             setPadding(dp(4), 0, 0, 0)
         })
         topBar.addView(identity)
-        topBar.addView(barKey("▤") { page = PAGE_CLIP; render() }.apply {
-            contentDescription = "Copied text and screenshots"
-        })
-        topBar.addView(barKey("✦") { showQuickShortcuts() }.apply {
-            contentDescription = "Quick replacements"
-            setTextColor(C.ACCENT)
-        })
-        topBar.addView(barKey("↔") {
+        if ("clipboard" in enabled) topBar.addView(barKey("▤") {
+            page = PAGE_CLIP; render()
+        }.apply { contentDescription = "Copied text and screenshots" })
+        if ("shortcuts" in enabled) topBar.addView(barKey("✦") {
+            showQuickShortcuts()
+        }.apply { contentDescription = "Quick replacements"; setTextColor(C.ACCENT) })
+        if ("oneHanded" in enabled) topBar.addView(barKey("↔") {
             prefs.oneHanded = (prefs.oneHanded + 1) % 3
             applyOneHanded()
         }.apply { contentDescription = "One handed mode" })
-        topBar.addView(barKey("⚙") { openSettings() }.apply {
-            contentDescription = "Open keyboard settings"
-        })
+        if ("settings" in enabled) topBar.addView(barKey("⚙") {
+            openSettings()
+        }.apply { contentDescription = "Open keyboard settings" })
     }
 
     private fun showQuickShortcuts() {
@@ -625,7 +679,7 @@ class MathapeloKeyboardService : InputMethodService() {
     }
 
     private fun renderLetters() {
-        if (prefs.showNumberRow) body.addView(charRow(NUMBERS))
+        if (numberRow()) body.addView(charRow(NUMBERS))
         body.addView(letterRow("qwertyuiop", false))
         body.addView(letterRow("asdfghjkl", true))
 
@@ -641,7 +695,7 @@ class MathapeloKeyboardService : InputMethodService() {
     }
 
     private fun renderSymbols(n: Int) {
-        if (prefs.showNumberRow) body.addView(charRow(NUMBERS))
+        if (numberRow()) body.addView(charRow(NUMBERS))
         if (n == 1) {
             body.addView(charRow("@#\$%&-+()/"))
             val r = rowLayout()
@@ -742,7 +796,7 @@ class MathapeloKeyboardService : InputMethodService() {
         val scroll = ScrollView(this)
         scroll.layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            bodyHeight() - (dp(prefs.keyHeight) + dp(6))
+            bodyHeight() - (dp(keyHeight()) + dp(6))
         )
         val grid = LinearLayout(this)
         grid.orientation = LinearLayout.VERTICAL
@@ -806,7 +860,7 @@ class MathapeloKeyboardService : InputMethodService() {
         val scroll = ScrollView(this)
         scroll.layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            if (clipSearching) dp(146) else bodyHeight() - dp(prefs.keyHeight) * 2
+            if (clipSearching) dp(146) else bodyHeight() - dp(keyHeight()) * 2
         )
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val all = ClipboardStore.entries(prefs,
@@ -912,7 +966,7 @@ class MathapeloKeyboardService : InputMethodService() {
             s[0] in " .,!?;:") {
             val word = currentWord()
             if (word.isNotEmpty()) {
-                val correction = if (prefs.autocorrectEnabled)
+                val correction = if (RemoteSettings.autocorrect(this, prefs.autocorrectEnabled))
                     PredictionEngine.correction(word, personalWords(), prefs.learnedWords) else null
                 if (correction != null) {
                     currentInputConnection?.let { ic ->

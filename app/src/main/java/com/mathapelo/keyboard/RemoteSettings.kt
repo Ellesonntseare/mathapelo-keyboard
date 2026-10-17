@@ -136,18 +136,18 @@ object RemoteSettings {
                 }
                 val body = JSONObject(String(bytes,Charsets.UTF_8))
                 if (body.optInt("schema") != 1) error("Unsupported config schema")
-                val revision = body.getInt("revision")
+                val remoteRevision = body.getInt("revision")
                 val obj = body.getJSONObject("config")
-                if (revision < 1 || revision < revision(app)) error("Outdated server configuration")
+                if (remoteRevision < 1 || remoteRevision < revision(app)) error("Outdated server configuration")
                 if (obj.optString("theme") !in C.names) error("Invalid server theme")
                 if (obj.length() > 20 || obj.optInt("keyHeight",46) !in 38..64) error("Invalid server settings")
-                val changed = revision != revision(app)
+                val changed = remoteRevision != revision(app)
                 if (changed) {
                     prefs(app).edit().putString("config",obj.toString())
-                        .putInt("revision",revision).apply()
+                        .putInt("revision",remoteRevision).apply()
                     cacheRaw = ""
                 }
-                main.post { done(changed, "Connected · Revision $revision") }
+                main.post { done(changed, "Connected · Revision $remoteRevision") }
             } catch (e: Exception) {
                 main.post { done(false, "Offline · using cached keyboard settings") }
             } finally {

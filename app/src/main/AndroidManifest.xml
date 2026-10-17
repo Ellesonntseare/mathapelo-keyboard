@@ -18,6 +18,18 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ScreenshotReceiverActivity"
+            android:label="Save to Mathapelo"
+            android:exported="true"
+            android:theme="@android:style/Theme.Material.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".MathapeloKeyboardService"
             android:label="Mathapelo Keyboard"

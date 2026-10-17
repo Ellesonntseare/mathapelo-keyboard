@@ -21,6 +21,13 @@ class PredictionEngineTest {
         assertNull(PredictionEngine.correction("ab"))
     }
 
+    @Test fun threeSuggestionSlotsAlwaysFilled() {
+        assertEquals(3, PredictionEngine.threeSuggestions("").size)
+        assertEquals(3, PredictionEngine.threeSuggestions("hel").size)
+        assertEquals(3, PredictionEngine.threeSuggestions("xzzqu").size)
+        assertTrue(PredictionEngine.threeSuggestions("hel").contains("hello"))
+    }
+
     @Test fun personalizedWordsNotOverridden() {
         assertNull(PredictionEngine.correction("Mathapelo", listOf("Mathapelo")))
         assertTrue(PredictionEngine.predictions("Zyx", listOf("zyxophone")).contains("Zyxophone"))

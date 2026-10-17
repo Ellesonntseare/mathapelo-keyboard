@@ -468,11 +468,11 @@ class MathapeloKeyboardService : InputMethodService() {
     // ---------- Predictions (local, never used for password/number fields) ----------
 
     private fun personalWords(): List<String> =
-        prefs.customWords.split(',', '\\n', ';').map { it.trim() }.filter { it.isNotEmpty() }
+        prefs.customWords.split(',', '\n', ';').map { it.trim() }.filter { it.isNotEmpty() }
 
     private fun currentWord(): String {
         val before = currentInputConnection?.getTextBeforeCursor(40, 0)?.toString().orEmpty()
-        return before.takeLastWhile { it.isLetter() || it == '\\'' }
+        return before.takeLastWhile { it.isLetter() || it == '\'' }
     }
 
     private fun updateSuggestions() {

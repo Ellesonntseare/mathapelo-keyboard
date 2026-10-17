@@ -234,7 +234,7 @@ class MathapeloKeyboardService : InputMethodService() {
     private fun roundBg(color: Int): GradientDrawable {
         val g = GradientDrawable()
         g.shape = GradientDrawable.RECTANGLE
-        g.cornerRadius = dp(9).toFloat()
+        g.cornerRadius = dp(12).toFloat()
         g.setColor(color)
         g.setStroke(dp(1), if (color == C.KEY) C.BAR else color)
         return g
@@ -410,9 +410,9 @@ class MathapeloKeyboardService : InputMethodService() {
         tv.gravity = Gravity.CENTER
         tv.setTextColor(C.TEXT)
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, if (label.length > 4) 14f else 20f)
-        tv.background = roundBg(C.BAR)
-        val lp = LinearLayout.LayoutParams(0, dp(38), 1f)
-        lp.setMargins(dp(3), dp(3), dp(3), dp(3))
+        tv.background = roundBg(C.SPECIAL)
+        val lp = LinearLayout.LayoutParams(0, dp(35), 1f)
+        lp.setMargins(dp(2), dp(2), dp(2), dp(2))
         tv.layoutParams = lp
         tv.setOnClickListener {
             feedback(AudioManager.FX_KEYPRESS_STANDARD)
@@ -538,21 +538,45 @@ class MathapeloKeyboardService : InputMethodService() {
 
     private fun buildTopBar() {
         topBar.removeAllViews()
-        val brand = TextView(this)
-        brand.text = "Mathapelo"
-        brand.setTextColor(C.ACCENT)
-        brand.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-        brand.gravity = Gravity.CENTER_VERTICAL
-        brand.setPadding(dp(10), 0, 0, 0)
-        brand.layoutParams = LinearLayout.LayoutParams(0, dp(38), 1.35f)
-        topBar.addView(brand)
-        topBar.addView(barKey("Copied") { page = PAGE_CLIP; render() })
-        topBar.addView(barKey("✦") { showQuickShortcuts() })
+        topBar.setPadding(dp(2), dp(2), dp(2), dp(2))
+        val identity = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, dp(38), 1.65f)
+        }
+        val icon = TextView(this).apply {
+            text = "M"
+            gravity = Gravity.CENTER
+            setTextColor(C.ACCENT_TEXT)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+            background = roundBg(C.ACCENT)
+            layoutParams = LinearLayout.LayoutParams(dp(35), dp(35))
+        }
+        identity.addView(icon)
+        identity.addView(TextView(this).apply {
+            text = "athapelo"
+            setTextColor(C.TEXT)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), 0, 0, 0)
+        })
+        topBar.addView(identity)
+        topBar.addView(barKey("▤") { page = PAGE_CLIP; render() }.apply {
+            contentDescription = "Copied text and screenshots"
+        })
+        topBar.addView(barKey("✦") { showQuickShortcuts() }.apply {
+            contentDescription = "Quick replacements"
+            setTextColor(C.ACCENT)
+        })
         topBar.addView(barKey("↔") {
             prefs.oneHanded = (prefs.oneHanded + 1) % 3
             applyOneHanded()
+        }.apply { contentDescription = "One handed mode" })
+        topBar.addView(barKey("⚙") { openSettings() }.apply {
+            contentDescription = "Open keyboard settings"
         })
-        topBar.addView(barKey("⚙") { openSettings() })
     }
 
     private fun showQuickShortcuts() {

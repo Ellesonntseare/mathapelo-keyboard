@@ -1,6 +1,9 @@
 package com.mathapelo.keyboard
 
 import android.app.Activity
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.Intent
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -27,6 +30,7 @@ class MainActivity : Activity() {
     private lateinit var prefs: Prefs
     private lateinit var column: LinearLayout
     private val importRequest = 91
+    private val photoPermissionRequest = 92
 
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
     private fun rounded(color: Int, radius: Int = 18) = GradientDrawable().apply {
@@ -56,6 +60,8 @@ class MainActivity : Activity() {
         label("Mathapelo", 36f, C.TEXT, 4, true)
         label("A beautiful way to express yourself.", 15f, C.TEXT_DIM, 4)
         setup()
+        sectionTitle("Remote Studio", "Your PC controls published designs, not personal messages")
+        remoteCard()
         sectionTitle("Make it yours", "Pick a signature look. Your keyboard updates the next time it opens.")
         themeChooser()
         sectionTitle("Live preview", "Your chosen theme, with softly rounded keys")
@@ -68,6 +74,7 @@ class MainActivity : Activity() {
         shortcutCard()
         sectionTitle("Clipboard studio", "Pin, search and keep your copied text and screenshots")
         clipboardCard()
+        screenshotCard()
         label("Private by design  ·  Stored on this device  ·  No account required", 12f, C.TEXT_DIM, 26)
     }
 
@@ -147,6 +154,83 @@ class MainActivity : Activity() {
         }
         textIn(box, "Try typing below", 13f, C.TEXT_DIM)
         field(box, "Type here to test your new keyboard", "", false) {}
+    }
+
+    private fun remoteCard() {
+        val box = card()
+        textIn(box, "🔒  HTTPS only · Tailscale private connection", 13f, C.ACCENT, true)
+        textIn(box, "Published layouts sync while the keyboard is in use. The last saved layout works offline.", 13f, C.TEXT_DIM)
+        textIn(box, "Server address", 13f, C.TEXT_DIM)
+        val address = field(box, "https://your-pc.tailnet.ts.net", RemoteSettings.endpoint(this), false) {}
+        textIn(box, "Device pairing token", 13f, C.TEXT_DIM)
+        val secret = field(box, "Paste device token", "", true) {}
+        textIn(box, if (RemoteSettings.configured(this))
+            "Paired · Cached revision v${RemoteSettings.revision(this)}" else "Not paired yet",
+            13f, C.TEXT_DIM)
+        action(box, "Connect and save") {
+            if (RemoteSettings.storePairing(this, address.text.toString(), secret.text.toString())) {
+                secret.setText("")
+                RemoteSettings.fetch(this, force = true) { _, result ->
+                    Toast.makeText(this, result, Toast.LENGTH_LONG).show()
+                }
+            } else Toast.makeText(this, "Enter an HTTPS address and pairing token from your PC", Toast.LENGTH_LONG).show()
+        }
+        action(box, "Check for updates", true) {
+            RemoteSettings.fetch(this, force = true) { _, result ->
+                Toast.makeText(this, result, Toast.LENGTH_LONG).show()
+            }
+        }
+        action(box, "Disconnect remote configuration", true) {
+            RemoteSettings.disconnect(this)
+            Toast.makeText(this, "Disconnected. Local keyboard settings remain.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun screenshotCard() {
+        sectionTitle("Automatic screenshots", "Save new screenshots locally when Android permits")
+        val box = card()
+        textIn(box, "Mathapelo observes new screenshots while its keyboard service runs. Screenshots never go to the PC.", 13f, C.TEXT_DIM)
+        textIn(box, "Needs full Photos access. On some devices Android may stop the watcher when the keyboard process is stopped.", 12f, C.TEXT_DIM)
+        action(box, if (prefs.autoScreenshots) "Turn automatic screenshots OFF" else "Enable automatic screenshots") {
+            if (prefs.autoScreenshots) {
+                prefs.autoScreenshots = false
+                Toast.makeText(this, "Automatic screenshots disabled", Toast.LENGTH_SHORT).show()
+                recreate()
+            } else requestScreenshotPermission()
+        }
+        action(box, "Import a screenshot manually", true) {
+            startActivityForResult(Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = "image/*"
+                addCategory(Intent.CATEGORY_OPENABLE)
+            }, importRequest)
+        }
+    }
+
+    private fun requestScreenshotPermission() {
+        if (Build.VERSION.SDK_INT < 29) {
+            Toast.makeText(this, "Automatic screenshot import needs Android 10+. Share screenshots instead.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val permission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES
+            else Manifest.permission.READ_EXTERNAL_STORAGE
+        if (checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
+            prefs.autoScreenshots = true
+            Toast.makeText(this, "Automatic screenshots enabled", Toast.LENGTH_SHORT).show()
+            recreate()
+        } else requestPermissions(arrayOf(permission), photoPermissionRequest)
+    }
+
+    override fun onRequestPermissionsResult(code: Int, permissions: Array<out String>,
+                                            grantResults: IntArray) {
+        super.onRequestPermissionsResult(code, permissions, grantResults)
+        if (code == photoPermissionRequest) {
+            val accepted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+            prefs.autoScreenshots = accepted
+            Toast.makeText(this, if (accepted) "Automatic screenshot import enabled"
+                else "Full Photos access is required; manual sharing still works",
+                Toast.LENGTH_LONG).show()
+            recreate()
+        }
     }
 
     private fun themeChooser() {

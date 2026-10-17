@@ -4,17 +4,45 @@ import android.content.Context
 import android.util.Base64
 import org.json.JSONArray
 
+/** Live theme palette shared by the settings app and the IME process. */
 object C {
-    val BG = 0xFF241B29.toInt()
-    val BAR = 0xFF33263A.toInt()
-    val KEY = 0xFF5B4561.toInt()
-    val KEY_DOWN = 0xFF795C80.toInt()
-    val SPECIAL = 0xFF40304A.toInt()
-    val ACCENT = 0xFFF2A6C1.toInt()
-    val ACCENT_DOWN = 0xFFD783A5.toInt()
-    val TEXT = 0xFFFFF7FC.toInt()
-    val TEXT_DIM = 0xFFD4BDD0.toInt()
-    val ACCENT_TEXT = 0xFF3B1F30.toInt()
+    data class Palette(val bg: Int, val bar: Int, val key: Int, val pressed: Int,
+                       val special: Int, val accent: Int, val accentDown: Int,
+                       val text: Int, val dim: Int, val onAccent: Int)
+    private val rose = Palette(0xFF1E1822.toInt(), 0xFF302636.toInt(),
+        0xFF504056.toInt(), 0xFF705677.toInt(), 0xFF3B3041.toInt(),
+        0xFFF5A7C6.toInt(), 0xFFE288B0.toInt(), 0xFFFFF8FC.toInt(),
+        0xFFD9C3D2.toInt(), 0xFF311D2B.toInt())
+    private val midnight = Palette(0xFF111822.toInt(), 0xFF202C3A.toInt(),
+        0xFF314155.toInt(), 0xFF475C74.toInt(), 0xFF243345.toInt(),
+        0xFF8FC8FF.toInt(), 0xFF65AFE8.toInt(), 0xFFF4F9FF.toInt(),
+        0xFFB3C6DB.toInt(), 0xFF11243A.toInt())
+    private val lavender = Palette(0xFF21192C.toInt(), 0xFF382A46.toInt(),
+        0xFF5A476C.toInt(), 0xFF745C89.toInt(), 0xFF453451.toInt(),
+        0xFFD7B0FF.toInt(), 0xFFBB91E4.toInt(), 0xFFFFF9FF.toInt(),
+        0xFFE4CFEF.toInt(), 0xFF352041.toInt())
+    private val pearl = Palette(0xFFF7F0F4.toInt(), 0xFFEFE2EA.toInt(),
+        0xFFFFFFFF.toInt(), 0xFFE9D7E2.toInt(), 0xFFE9DBE5.toInt(),
+        0xFFAA4778.toInt(), 0xFF923963.toInt(), 0xFF2C2230.toInt(),
+        0xFF6C5D68.toInt(), 0xFFFFFFFF.toInt())
+    val names = listOf("Rose", "Midnight", "Lavender", "Pearl")
+    private var palette = rose
+    fun use(name: String) { palette = when (name) {
+        "Midnight" -> midnight
+        "Lavender" -> lavender
+        "Pearl" -> pearl
+        else -> rose
+    } }
+    val BG get() = palette.bg
+    val BAR get() = palette.bar
+    val KEY get() = palette.key
+    val KEY_DOWN get() = palette.pressed
+    val SPECIAL get() = palette.special
+    val ACCENT get() = palette.accent
+    val ACCENT_DOWN get() = palette.accentDown
+    val TEXT get() = palette.text
+    val TEXT_DIM get() = palette.dim
+    val ACCENT_TEXT get() = palette.onAccent
 }
 
 class Prefs(context: Context) {
@@ -80,6 +108,45 @@ class Prefs(context: Context) {
     var shortcuts: String
         get() = sp.getString("shortcuts", "omw=on my way\nbrb=be right back\nidk=I don't know") ?: ""
         set(v) { sp.edit().putString("shortcuts", v).apply() }
+
+    var theme: String
+        get() = sp.getString("theme", "Rose") ?: "Rose"
+        set(v) { sp.edit().putString("theme", v).apply() }
+
+    var predictionsEnabled: Boolean
+        get() = sp.getBoolean("predictionsEnabled", true)
+        set(v) { sp.edit().putBoolean("predictionsEnabled", v).apply() }
+
+    var autocorrectEnabled: Boolean
+        get() = sp.getBoolean("autocorrectEnabled", true)
+        set(v) { sp.edit().putBoolean("autocorrectEnabled", v).apply() }
+
+    var customWords: String
+        get() = sp.getString("customWords", "") ?: ""
+        set(v) { sp.edit().putString("customWords", v).apply() }
+
+    var learnedWords: List<String>
+        get() = try {
+            val array = JSONArray(sp.getString("learnedWords", "[]"))
+            List(array.length()) { array.getString(it) }
+        } catch (_: Exception) { emptyList() }
+        set(v) { sp.edit().putString("learnedWords", JSONArray(v).toString()).apply() }
+
+    fun learnWord(word: String) {
+        val w = word.trim().lowercase(java.util.Locale.ROOT)
+        if (w.length !in 3..24 || !w.all { it.isLetter() }) return
+        val current = learnedWords.toMutableList()
+        current.remove(w)
+        current.add(0, w)
+        learnedWords = current.take(250)
+    }
+
+    var clipPins: List<String>
+        get() = try {
+            val array = JSONArray(sp.getString("clipPins", "[]"))
+            List(array.length()) { array.getString(it) }
+        } catch (_: Exception) { emptyList() }
+        set(v) { sp.edit().putString("clipPins", JSONArray(v).toString()).apply() }
 
     var clips: List<String>
         get() = try {

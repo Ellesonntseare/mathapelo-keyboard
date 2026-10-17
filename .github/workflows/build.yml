@@ -19,6 +19,9 @@ jobs:
         with:
           gradle-version: 8.7
 
+      - name: Run JVM unit tests
+        run: gradle testDebugUnitTest
+
       - name: Build debug APK
         env:
           MATHAPELO_SHORTCUTS_B64: ${{ secrets.MATHAPELO_SHORTCUTS_B64 }}

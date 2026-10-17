@@ -33,6 +33,21 @@ object C {
         "Pearl" -> pearl
         else -> rose
     } }
+    fun overrideColors(colors: Map<String, Int>) {
+        if (colors.isEmpty()) return
+        palette=palette.copy(
+            bg=colors["background"] ?: palette.bg,
+            bar=colors["bar"] ?: palette.bar,
+            key=colors["key"] ?: palette.key,
+            pressed=colors["pressed"] ?: palette.pressed,
+            special=colors["special"] ?: palette.special,
+            accent=colors["accent"] ?: palette.accent,
+            accentDown=colors["accentDown"] ?: palette.accentDown,
+            text=colors["text"] ?: palette.text,
+            dim=colors["muted"] ?: palette.dim,
+            onAccent=colors["onAccent"] ?: palette.onAccent
+        )
+    }
     val BG get() = palette.bg
     val BAR get() = palette.bar
     val KEY get() = palette.key
@@ -108,6 +123,10 @@ class Prefs(context: Context) {
     var shortcuts: String
         get() = sp.getString("shortcuts", "omw=on my way\nbrb=be right back\nidk=I don't know") ?: ""
         set(v) { sp.edit().putString("shortcuts", v).apply() }
+
+    var autoScreenshots: Boolean
+        get() = sp.getBoolean("autoScreenshots", false)
+        set(v) { sp.edit().putBoolean("autoScreenshots", v).apply() }
 
     var theme: String
         get() = sp.getString("theme", "Rose") ?: "Rose"

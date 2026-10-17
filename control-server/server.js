@@ -24,7 +24,7 @@ function save(){
 }
 function device(name){
   const token=random();
-  state.devices.push({name:name.slice(0,60)||"Android phone",hash:digest(token),created:new Date().toISOString()});
+  state.devices.push({id:random().slice(0,16),name:name.slice(0,60)||"Android phone",hash:digest(token),created:new Date().toISOString()});
   save();
   return token;
 }
@@ -104,7 +104,7 @@ const srv=http.createServer(async(req,res)=>{
     if(!sessionFor(req))return send(res,401,{error:"Admin login required"});
     if(req.method==="POST"&&!checkOrigin(req))return send(res,403,{error:"Origin rejected"});
     if(url.pathname==="/api/admin/state"&&req.method==="GET")
-      return send(res,200,{published:state.published,draft:state.draft,history:state.history.map(x=>({revision:x.revision,at:x.at})),devices:state.devices.map(x=>({name:x.name,created:x.created}))});
+      return send(res,200,{published:state.published,draft:state.draft,history:state.history.map(x=>({revision:x.revision,at:x.at})),devices:state.devices.map(x=>({id:x.id,name:x.name,created:x.created}))});
     if(url.pathname==="/api/admin/draft"&&req.method==="PUT"){
       if(!checkOrigin(req))return send(res,403,{error:"Origin rejected"});
       state.draft=valid((await receive(req)).config);save();return send(res,200,{ok:true});
@@ -127,6 +127,14 @@ const srv=http.createServer(async(req,res)=>{
     if(url.pathname==="/api/admin/pair"&&req.method==="POST"){
       const body=await receive(req);
       return send(res,200,{token:device(typeof body.name==="string"?body.name:"Android phone")});
+    }
+    if(url.pathname==="/api/admin/unpair"&&req.method==="POST"){
+      const body=await receive(req);
+      if(typeof body.id!=="string" || body.id.length!==16)return send(res,400,{error:"Invalid device"});
+      const old=state.devices.length;
+      state.devices=state.devices.filter(d=>d.id!==body.id);
+      if(state.devices.length===old)return send(res,404,{error:"Device not found"});
+      save();return send(res,200,{ok:true});
     }
     if(url.pathname==="/api/admin/logout"&&req.method==="POST"){
       const cookie=(req.headers.cookie||"").match(/mathapelo_sid=([0-9a-f]{64})/);

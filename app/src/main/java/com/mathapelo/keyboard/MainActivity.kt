@@ -15,6 +15,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -408,7 +409,18 @@ class MainActivity : Activity() {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(0, dp(6), 0, dp(6))
             }
-            val title = if (isImageClip(entry)) "▧  Screenshot / image" else entry
+            if (isImageClip(entry)) {
+                val preview = ImageView(this).apply {
+                    contentDescription = "Saved screenshot preview"
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    background = rounded(C.KEY, 9)
+                    ClipboardStore.thumbnail(this@MainActivity, imageNameOf(entry))?.let { setImageBitmap(it) }
+                    layoutParams = LinearLayout.LayoutParams(dp(46), dp(46))
+                        .apply { rightMargin = dp(9) }
+                }
+                row.addView(preview)
+            }
+            val title = if (isImageClip(entry)) "Screenshot / image" else entry
             row.addView(TextView(this).apply {
                 text = title
                 maxLines = 2

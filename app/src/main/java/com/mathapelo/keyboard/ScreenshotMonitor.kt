@@ -50,7 +50,7 @@ class ScreenshotMonitor(
     }
 
     private fun scan() {
-        if(!prefs.autoScreenshots || !permissionGranted() || !scanning.compareAndSet(false,true)) return
+        if(Build.VERSION.SDK_INT<29 || !prefs.autoScreenshots || !permissionGranted() || !scanning.compareAndSet(false,true)) return
         worker.execute {
             try {
                 val uri=MediaStore.Images.Media.EXTERNAL_CONTENT_URI
@@ -58,6 +58,7 @@ class ScreenshotMonitor(
                     MediaStore.Images.Media.RELATIVE_PATH,MediaStore.Images.Media.DATE_ADDED)
                 val now=System.currentTimeMillis()/1000L
                 val results=mutableListOf<Pair<Long,Uri>>()
+                var newest=lastSeen
                 context.contentResolver.query(uri,fields,null,null,
                     MediaStore.Images.Media.DATE_ADDED+" DESC")?.use { cursor ->
                     val idCol=cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
@@ -74,9 +75,10 @@ class ScreenshotMonitor(
                            (name.contains("screenshot")||folder.contains("screenshot"))) {
                             results.add(id to android.content.ContentUris.withAppendedId(uri,id))
                         }
-                        if(id>lastSeen)lastSeen=id
+                        if(id>newest)newest=id
                     }
                 }
+                lastSeen=newest
                 // Read only screenshots added since monitoring; private app storage.
                 var saved=false
                 results.sortedBy { it.first }.forEach { (_,image) ->

@@ -66,7 +66,24 @@ async function refresh(){
  const s=await request("/api/admin/state");
  $("revision").textContent="v"+s.published.revision;
  $("publishedAt").textContent=new Date(s.published.at).toLocaleString();
- $("devices").textContent=s.devices.map(x=>x.name+" · paired "+new Date(x.created).toLocaleDateString()).join(" / ")||"No paired devices yet";
+ const devices=$("devices");devices.replaceChildren();
+ if(!s.devices.length) devices.textContent="No paired devices yet";
+ for(const device of s.devices){
+   const row=document.createElement("div");row.className="item";
+   const title=document.createElement("span");
+   title.textContent=device.name+" · paired "+new Date(device.created).toLocaleDateString();
+   row.append(title);
+   if(device.id){
+     const revoke=document.createElement("button");revoke.textContent="Revoke";
+     revoke.addEventListener("click",async()=>{
+       if(!confirm("Revoke this phone's access to new configurations?"))return;
+       try{await request("/api/admin/unpair","POST",{id:device.id});await refresh();status("Phone access revoked");}
+       catch(e){status(e.message,true)}
+     });
+     row.append(revoke);
+   }
+   devices.append(row);
+ }
  history=s.history;
  const list=$("history");list.replaceChildren();
  for(const item of history){

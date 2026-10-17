@@ -1,0 +1,1 @@
+{"name":"mathapelo-control-panel","private":true,"version":"0.1.0","description":"Private Windows-hosted configuration for Mathapelo Keyboard","scripts":{"start":"node server.js","test":"node --test tests/*.test.js"},"engines":{"node":">=20"}}

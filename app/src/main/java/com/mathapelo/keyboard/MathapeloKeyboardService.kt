@@ -89,6 +89,7 @@ class MathapeloKeyboardService : InputMethodService() {
     private lateinit var outer: FrameLayout
     private lateinit var root: LinearLayout
     private lateinit var topBar: LinearLayout
+    private lateinit var suggestionBar: LinearLayout
     private lateinit var body: LinearLayout
     private lateinit var bubbleView: TextView
 
@@ -102,6 +103,8 @@ class MathapeloKeyboardService : InputMethodService() {
     private var isPassword = false
     private var emojiTab = 0
     private var recentKeys = ""
+    private var clipSearching = false
+    private var clipFilter = ""
 
     private val clipListener = ClipboardManager.OnPrimaryClipChangedListener { onClipChanged() }
 
@@ -115,6 +118,7 @@ class MathapeloKeyboardService : InputMethodService() {
     override fun onCreate() {
         super.onCreate()
         prefs = Prefs(this)
+        C.use(prefs.theme)
         clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         audio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
@@ -148,7 +152,15 @@ class MathapeloKeyboardService : InputMethodService() {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         )
 
+        suggestionBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            setBackgroundColor(C.BAR)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(43))
+        }
         root.addView(topBar)
+        root.addView(suggestionBar)
         root.addView(body)
         outer.addView(root)
 
@@ -186,11 +198,14 @@ class MathapeloKeyboardService : InputMethodService() {
             else -> MODE_TEXT
         }
 
+        C.use(prefs.theme)
+        if (::outer.isInitialized) outer.setBackgroundColor(C.BG)
         page = if (fieldMode == MODE_PHONE || fieldMode == MODE_NUMBER || fieldMode == MODE_DATETIME) PAGE_NUMPAD else PAGE_LETTERS
         shift = OFF
         recentKeys = ""
         if (::outer.isInitialized) render()
         autoCapitalize()
+        updateSuggestions()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
@@ -198,6 +213,7 @@ class MathapeloKeyboardService : InputMethodService() {
         handler.removeCallbacksAndMessages(null)
         recentKeys = ""
         hideBubble()
+        if (::suggestionBar.isInitialized) suggestionBar.visibility = View.GONE
     }
 
     override fun onUpdateSelection(
@@ -207,6 +223,7 @@ class MathapeloKeyboardService : InputMethodService() {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
         if (newSelStart != newSelEnd || newSelEnd < oldSelEnd || newSelEnd > oldSelEnd + 1) {
             recentKeys = ""
+            updateSuggestions()
         }
     }
 
@@ -219,6 +236,7 @@ class MathapeloKeyboardService : InputMethodService() {
         g.shape = GradientDrawable.RECTANGLE
         g.cornerRadius = dp(9).toFloat()
         g.setColor(color)
+        g.setStroke(dp(1), if (color == C.KEY) C.BAR else color)
         return g
     }
 
@@ -340,12 +358,15 @@ class MathapeloKeyboardService : InputMethodService() {
             }
         }
 
+        tv.setOnClickListener { onTap() } // Accessibility click action; touch gestures are handled below.
         tv.setOnTouchListener { v, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     longFired = false
                     canceled = false
                     v.background = roundBg(down)
+                    v.animate().cancel()
+                    v.animate().scaleX(.965f).scaleY(.94f).setDuration(65).start()
                     feedback(sound)
                     if (bubble) showBubble(v, (v as TextView).text.toString())
                     handler.postDelayed(longPress, 380)
@@ -363,6 +384,7 @@ class MathapeloKeyboardService : InputMethodService() {
                     handler.removeCallbacks(longPress)
                     handler.removeCallbacks(repeater)
                     v.background = roundBg(if (v === shiftKey && shift != OFF) C.ACCENT else rest)
+                    v.animate().scaleX(1f).scaleY(1f).setDuration(110).start()
                     hideBubble()
                     if (e.actionMasked == MotionEvent.ACTION_UP && !longFired && !canceled) onTap()
                 }
@@ -443,6 +465,48 @@ class MathapeloKeyboardService : InputMethodService() {
         return r
     }
 
+    // ---------- Predictions (local, never used for password/number fields) ----------
+
+    private fun personalWords(): List<String> =
+        prefs.customWords.split(',', '\\n', ';').map { it.trim() }.filter { it.isNotEmpty() }
+
+    private fun currentWord(): String {
+        val before = currentInputConnection?.getTextBeforeCursor(40, 0)?.toString().orEmpty()
+        return before.takeLastWhile { it.isLetter() || it == '\\'' }
+    }
+
+    private fun updateSuggestions() {
+        if (!::suggestionBar.isInitialized) return
+        val canSuggest = prefs.predictionsEnabled && !isPassword &&
+            fieldMode == MODE_TEXT && page == PAGE_LETTERS
+        val word = if (canSuggest) currentWord() else ""
+        val options = if (word.isNotEmpty())
+            PredictionEngine.predictions(word, personalWords(), prefs.learnedWords) else emptyList()
+        suggestionBar.removeAllViews()
+        if (options.isEmpty()) {
+            suggestionBar.visibility = View.GONE
+            return
+        }
+        suggestionBar.visibility = View.VISIBLE
+        options.forEach { suggestion ->
+            val chip = barKey(suggestion) {
+                val ic = currentInputConnection ?: return@barKey
+                val old = currentWord()
+                if (old.isNotEmpty()) {
+                    ic.beginBatchEdit()
+                    ic.deleteSurroundingText(old.length, 0)
+                    ic.commitText(suggestion + " ", 1)
+                    ic.endBatchEdit()
+                    prefs.learnWord(suggestion)
+                    autoCapitalize()
+                    updateSuggestions()
+                }
+            }
+            chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            suggestionBar.addView(chip)
+        }
+    }
+
     // ---------- Rendering pages ----------
 
     private fun render() {
@@ -461,6 +525,7 @@ class MathapeloKeyboardService : InputMethodService() {
             PAGE_NUMPAD -> renderNumpad()
         }
         refreshLetters()
+        updateSuggestions()
     }
 
     private fun applyOneHanded() {
@@ -695,67 +760,102 @@ class MathapeloKeyboardService : InputMethodService() {
     }
 
     private fun renderClipboard() {
+        val heading = rowLayout()
+        heading.addView(key(if (clipSearching) "Search: ${clipFilter.take(12)}" else "⌕ Search",
+            3f, STYLE_SPECIAL) {
+            clipSearching = true
+            clipFilter = ""
+            render()
+        })
+        heading.addView(key("★ Pinned", 1.5f, STYLE_SPECIAL) {
+            clipSearching = true
+            clipFilter = "★"
+            render()
+        })
+        heading.addView(key("✕", 1f, STYLE_SPECIAL) {
+            clipSearching = false
+            clipFilter = ""
+            render()
+        })
+        body.addView(heading)
+
         val scroll = ScrollView(this)
         scroll.layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            bodyHeight() - (dp(prefs.keyHeight) + dp(6))
+            if (clipSearching) dp(146) else bodyHeight() - dp(prefs.keyHeight) * 2
         )
-        val list = LinearLayout(this)
-        list.orientation = LinearLayout.VERTICAL
-
-        val clips = prefs.clips
-        val textCount = clips.count { !isImageClip(it) }
-        val imageCount = clips.size - textCount
-        val summary = TextView(this)
-        summary.text = "Copied  •  $textCount texts  •  $imageCount pictures"
-        summary.setTextColor(C.TEXT_DIM)
-        summary.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-        summary.setPadding(dp(12), dp(10), dp(12), dp(8))
-        list.addView(summary)
-        if (clips.isEmpty()) {
-            val empty = TextView(this)
-            empty.text = "Nothing copied yet.\nText and images you copy show up here."
-            empty.setTextColor(C.TEXT_DIM)
-            empty.gravity = Gravity.CENTER
-            empty.setPadding(dp(16), dp(40), dp(16), dp(16))
-            list.addView(empty)
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val all = ClipboardStore.entries(prefs,
+            if (clipFilter == "★") "" else clipFilter)
+        val clips = if (clipFilter == "★") all.filter { it in prefs.clipPins } else all
+        val count = TextView(this).apply {
+            text = "Copied  •  ${clips.size} saved  •  Hold an item to pin"
+            setTextColor(C.TEXT_DIM)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setPadding(dp(12), dp(9), dp(12), dp(9))
         }
-        for (c in clips) {
+        list.addView(count)
+        if (clips.isEmpty()) list.addView(TextView(this).apply {
+            text = if (clipSearching) "No matching clips" else "Nothing copied yet.\nCopy or share screenshots to Mathapelo."
+            setTextColor(C.TEXT_DIM)
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(18), dp(16), dp(18))
+        })
+        clips.forEach { c ->
             if (isImageClip(c)) {
-                list.addView(imageClipView(imageNameOf(c)))
-                continue
+                list.addView(imageClipView(imageNameOf(c), c))
+            } else {
+                val item = TextView(this).apply {
+                    text = (if (c in prefs.clipPins) "★  " else "") + c
+                    setTextColor(C.TEXT)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                    maxLines = 2
+                    ellipsize = TextUtils.TruncateAt.END
+                    setPadding(dp(12), dp(11), dp(12), dp(11))
+                    background = roundBg(C.KEY)
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) }
+                    setOnClickListener { commit(c) }
+                    setOnLongClickListener {
+                        ClipboardStore.togglePin(c, prefs)
+                        render()
+                        true
+                    }
+                }
+                list.addView(item)
             }
-            val item = TextView(this)
-            item.text = c
-            item.setTextColor(C.TEXT)
-            item.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            item.maxLines = 2
-            item.ellipsize = TextUtils.TruncateAt.END
-            item.setPadding(dp(12), dp(10), dp(12), dp(10))
-            item.background = roundBg(C.KEY)
-            val lp = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-            lp.setMargins(dp(3), dp(3), dp(3), dp(3))
-            item.layoutParams = lp
-            item.setOnClickListener {
-                feedback(AudioManager.FX_KEYPRESS_STANDARD)
-                commit(c)
-            }
-            list.addView(item)
         }
         scroll.addView(list)
         body.addView(scroll)
-
-        val bar = rowLayout()
-        bar.addView(key("ABC", 1.5f, STYLE_SPECIAL) { page = PAGE_LETTERS; render() })
-        bar.addView(key("Clear all", 2f, STYLE_SPECIAL) {
-            prefs.clips = emptyList()
-            clearClipFiles(this)
+        if (clipSearching) {
+            listOf("qwertyuiop", "asdfghjkl", "zxcvbnm").forEach { letters ->
+                val r = rowLayout()
+                letters.forEach { ch ->
+                    r.addView(key(ch.toString(), 1f) {
+                        if (clipFilter == "★") clipFilter = ""
+                        clipFilter += ch
+                        render()
+                    }.apply {
+                        layoutParams = LinearLayout.LayoutParams(0, dp(34), 1f)
+                            .apply { setMargins(dp(2), dp(1), dp(2), dp(1)) }
+                    })
+                }
+                body.addView(r)
+            }
+        }
+        val footer = rowLayout()
+        footer.addView(key("ABC", 1.4f, STYLE_SPECIAL) {
+            clipSearching = false
+            page = PAGE_LETTERS
             render()
         })
-        bar.addView(spacer(5f))
-        body.addView(bar)
+        footer.addView(key(if (clipSearching) "⌫" else "Clear all", 1.5f, STYLE_SPECIAL) {
+            if (clipSearching) { clipFilter = clipFilter.dropLast(1); render() }
+            else { ClipboardStore.clear(this, prefs); render() }
+        })
+        footer.addView(key("⚙", 1f, STYLE_SPECIAL) { openSettings() })
+        body.addView(footer)
     }
 
     // ---------- Typing ----------
@@ -764,6 +864,7 @@ class MathapeloKeyboardService : InputMethodService() {
         recentKeys = ""
         currentInputConnection?.commitText(text, 1)
         autoCapitalize()
+        updateSuggestions()
     }
 
     private fun typeLetter(c: Char) {
@@ -773,6 +874,7 @@ class MathapeloKeyboardService : InputMethodService() {
         expandDotShortcut(out.toString())
         autoCapitalize()
         refreshLetters()
+        updateSuggestions()
     }
 
     private fun typeChar(s: String) {
@@ -782,9 +884,31 @@ class MathapeloKeyboardService : InputMethodService() {
             autoCapitalize()
             return
         }
+        if (!isPassword && fieldMode == MODE_TEXT && s.length == 1 &&
+            s[0] in " .,!?;:") {
+            val word = currentWord()
+            if (word.isNotEmpty()) {
+                val correction = if (prefs.autocorrectEnabled)
+                    PredictionEngine.correction(word, personalWords(), prefs.learnedWords) else null
+                if (correction != null) {
+                    currentInputConnection?.let { ic ->
+                        ic.beginBatchEdit()
+                        ic.deleteSurroundingText(word.length, 0)
+                        ic.commitText(correction + s, 1)
+                        ic.endBatchEdit()
+                    }
+                    prefs.learnWord(correction)
+                    autoCapitalize()
+                    updateSuggestions()
+                    return
+                }
+                prefs.learnWord(word)
+            }
+        }
         commit(s)
         expandDotShortcut(s)
         autoCapitalize()
+        updateSuggestions()
     }
 
     private fun deleteOne() {
@@ -799,6 +923,7 @@ class MathapeloKeyboardService : InputMethodService() {
             }
         }
         autoCapitalize()
+        updateSuggestions()
     }
 
     private fun enterAction(): Int {
@@ -908,162 +1033,34 @@ class MathapeloKeyboardService : InputMethodService() {
         }
     }
 
-    // ---------- Clipboard history ----------
+    // ---------- System clipboard ----------
 
     private fun onClipChanged() {
-        try {
-            val clip = clipboard.primaryClip ?: return
-            if (clip.itemCount == 0) return
-            val desc = clip.description
-            if (desc.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true) return
-
-            val item = clip.getItemAt(0)
-            var hasImage = false
-            for (i in 0 until desc.mimeTypeCount) {
-                if (desc.getMimeType(i).startsWith("image/")) hasImage = true
-            }
-            val uri = item.uri
-            val uriIsImage = if (uri != null) {
-                try { contentResolver.getType(uri)?.startsWith("image/") == true }
-                catch (_: Exception) { false }
-            } else false
-            if ((hasImage || uriIsImage) && uri != null) {
-                saveImageClip(uri)
-                return
-            }
-
-            val t = item.coerceToText(this)?.toString()?.trim() ?: return
-            if (t.isEmpty() || t.length > 2000) return
-            addClip(t)
-        } catch (e: Exception) {
-        }
-    }
-
-    private fun addClip(entry: String) {
-        val list = prefs.clips.toMutableList()
-        list.remove(entry)
-        list.add(0, entry)
-        val kept = list.take(20)
-        prefs.clips = kept
-        // delete image files that fell off the list
-        val keepNames = kept.filter { isImageClip(it) }.map { imageNameOf(it) }.toSet()
-        File(filesDir, "clips").listFiles()?.forEach {
-            if (it.name !in keepNames) it.delete()
-        }
+        ClipboardStore.captureSystem(this, clipboard, prefs)
         if (::outer.isInitialized && page == PAGE_CLIP) render()
     }
 
-    private fun saveImageClip(uri: Uri) {
-        val bytes = try {
-            contentResolver.openInputStream(uri)?.use { stream ->
-                val output = ByteArrayOutputStream()
-                val chunk = ByteArray(8192)
-                while (true) {
-                    val count = stream.read(chunk)
-                    if (count < 0) break
-                    if (output.size() + count > 10 * 1024 * 1024) return
-                    output.write(chunk, 0, count)
-                }
-                output.toByteArray()
+    private fun imageClipView(name: String, entry: String): View {
+        val iv = ImageView(this).apply {
+            contentDescription = "Saved screenshot. Tap to paste; hold to pin."
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+            background = roundBg(C.KEY)
+            val bmp = ClipboardStore.thumbnail(this@MathapeloKeyboardService, name)
+            if (bmp != null) setImageBitmap(bmp)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(106))
+                .apply { setMargins(dp(3), dp(3), dp(3), dp(3)) }
+            setOnClickListener {
+                feedback(AudioManager.FX_KEYPRESS_STANDARD)
+                ClipboardStore.pasteImage(this@MathapeloKeyboardService, name,
+                    currentInputConnection, currentInputEditorInfo, clipboard)
             }
-        } catch (e: Exception) {
-            null
-        }
-        if (bytes == null || bytes.size < 12) return
-
-        val hash = MessageDigest.getInstance("MD5").digest(bytes)
-            .joinToString("") { "%02x".format(it) }
-        val ext = when {
-            bytes[0] == 0x89.toByte() && bytes[1] == 'P'.code.toByte() -> "png"
-            bytes[0] == 'G'.code.toByte() && bytes[1] == 'I'.code.toByte() -> "gif"
-            bytes[0] == 'R'.code.toByte() && bytes[8] == 'W'.code.toByte() -> "webp"
-            else -> "jpg"
-        }
-        val dir = File(filesDir, "clips")
-        dir.mkdirs()
-        val name = "$hash.$ext"
-        val file = File(dir, name)
-        if (!file.exists()) file.writeBytes(bytes)
-        addClip(IMG_PREFIX + name)
-    }
-
-    private fun mimeFor(name: String) = when {
-        name.endsWith(".png") -> "image/png"
-        name.endsWith(".gif") -> "image/gif"
-        name.endsWith(".webp") -> "image/webp"
-        else -> "image/jpeg"
-    }
-
-    private fun decodeThumb(file: File): Bitmap? {
-        val bounds = BitmapFactory.Options()
-        bounds.inJustDecodeBounds = true
-        BitmapFactory.decodeFile(file.path, bounds)
-        var sample = 1
-        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 400) {
-            sample *= 2
-        }
-        val opts = BitmapFactory.Options()
-        opts.inSampleSize = sample
-        return BitmapFactory.decodeFile(file.path, opts)
-    }
-
-    private fun imageClipView(name: String): View {
-        val file = File(File(filesDir, "clips"), name)
-        val iv = ImageView(this)
-        iv.contentDescription = "Copied picture"
-        iv.scaleType = ImageView.ScaleType.FIT_CENTER
-        iv.setPadding(dp(6), dp(6), dp(6), dp(6))
-        iv.background = roundBg(C.KEY)
-        val bmp = decodeThumb(file)
-        if (bmp != null) iv.setImageBitmap(bmp)
-        val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(120))
-        lp.setMargins(dp(3), dp(3), dp(3), dp(3))
-        iv.layoutParams = lp
-        iv.setOnClickListener {
-            feedback(AudioManager.FX_KEYPRESS_STANDARD)
-            pasteImage(name)
+            setOnLongClickListener {
+                ClipboardStore.togglePin(entry, prefs)
+                render()
+                true
+            }
         }
         return iv
-    }
-
-    private fun pasteImage(name: String) {
-        val file = File(File(filesDir, "clips"), name)
-        if (!file.exists()) {
-            Toast.makeText(this, "Image is no longer available", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val uri = FileProvider.getUriForFile(this, "$packageName.clipfiles", file)
-        val ic = currentInputConnection
-        val info = currentInputEditorInfo
-
-        var ok = false
-        if (ic != null && info != null) {
-            try {
-                val content = InputContentInfoCompat(
-                    uri, ClipDescription("image", arrayOf(mimeFor(name))), null
-                )
-                ok = InputConnectionCompat.commitContent(
-                    ic, info, content,
-                    InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null
-                )
-            } catch (e: Exception) {
-                ok = false
-            }
-        }
-
-        if (!ok) {
-            // This app doesn't accept images from a keyboard: put it back on the
-            // system clipboard so the person can long-press and tap Paste.
-            try {
-                clipboard.setPrimaryClip(ClipData.newUri(contentResolver, "image", uri))
-                Toast.makeText(
-                    this,
-                    "This app can't take images from the keyboard. Image copied: long-press and tap Paste.",
-                    Toast.LENGTH_LONG
-                ).show()
-            } catch (e: Exception) {
-                Toast.makeText(this, "Couldn't paste image", Toast.LENGTH_SHORT).show()
-            }
-        }
     }
 }

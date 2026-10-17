@@ -19,6 +19,12 @@ jobs:
         with:
           gradle-version: 8.7
 
+      - name: Test PC control server
+        run: |
+          node --check control-server/server.js
+          node --check control-server/public/app.js
+          node --test control-server/tests/*.test.js
+
       - name: Run JVM unit tests
         run: gradle testDebugUnitTest
 

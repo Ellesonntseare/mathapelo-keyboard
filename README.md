@@ -35,3 +35,7 @@ Android SDK 34 and JDK 17. GitHub Actions uploads a debug APK after each push.
 - JVM prediction tests are run by GitHub Actions before the debug APK is built.
 
 The personal dictionary has no network service and does not process passwords. You can delete its learned words from Settings.
+
+## Windows-hosted Remote Studio (new development branch)
+
+The `feature/windows-remote-control` branch includes a private PC control panel at `control-server/`, a TLS-only Android configuration client, an exactly three-slot suggestion bar and an opt-in screenshot observer. See [docs/REMOTE_STUDIO.md](docs/REMOTE_STUDIO.md) for setup, security constraints and screenshot limitations.

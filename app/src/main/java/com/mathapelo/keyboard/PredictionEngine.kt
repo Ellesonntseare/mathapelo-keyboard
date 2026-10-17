@@ -50,6 +50,29 @@ object PredictionEngine {
             .toList()
     }
 
+    /**
+     * Exactly three suggestion slots for ordinary text fields. Local dictionary wins,
+     * then an editable current word, then common safe completions.
+     */
+    fun threeSuggestions(prefix: String, personal: Collection<String> = emptyList(),
+                         learned: Collection<String> = emptyList()): List<String> {
+        val typed = prefix.trim()
+        val choices = mutableListOf<String>()
+        fun add(word: String?) {
+            if (!word.isNullOrBlank() && choices.none { it.equals(word, ignoreCase = true) })
+                choices.add(word)
+        }
+        if (typed.isNotEmpty()) {
+            add(correction(typed, personal, learned))
+            predictions(typed, personal, learned, 3).forEach(::add)
+            add(typed) // Always offer a way to keep the spelling the user typed.
+        }
+        val fallback = if (typed.firstOrNull()?.isUpperCase() == true)
+            listOf("The", "And", "You", "Hello") else listOf("the", "and", "you", "hello")
+        fallback.forEach(::add)
+        return choices.take(3)
+    }
+
     /** Conservative correction: only a *unique* known word at edit distance 1. */
     fun correction(word: String, personal: Collection<String> = emptyList(),
                    learned: Collection<String> = emptyList()): String? {
